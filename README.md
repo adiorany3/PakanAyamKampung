@@ -41,6 +41,12 @@ Aplikasi Streamlit untuk membantu peternak ayam kampung/KUB menyusun ransum berb
    - PDF berisi laporan ringkas siap cetak: ringkasan biaya/nutrisi, formula, evaluasi, saran, checklist belanja, dan checklist pemeliharaan.
    - CSV tetap tersedia untuk formula dan checklist belanja sederhana.
 
+## Perbaikan v1.1
+
+- Memperbaiki error `TypeError` pada tombol **Unduh ransum Excel (.xlsx)** di Streamlit Cloud.
+- Export Excel sekarang aman untuk nilai angka, kosong/NaN, dan teks panjang saat menghitung lebar kolom otomatis.
+- Export PDF juga dibuat lebih aman untuk nilai kosong.
+
 ## Cara menjalankan
 
 Pastikan Python 3.10+ sudah terpasang.

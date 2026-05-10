@@ -53,7 +53,7 @@ st.set_page_config(
 
 
 DEVELOPER = "Galuh Adi Insani"
-APP_VERSION = "PakanAyamKampung Pro Export"
+APP_VERSION = "PakanAyamKampung Pro Export v1.1"
 
 
 # =============================================================================
@@ -891,6 +891,16 @@ def xlsx_download(export_bundle: Dict[str, pd.DataFrame]) -> bytes:
         integer_fmt = workbook.add_format({"num_format": "#,##0", "border": 1})
         text_fmt = workbook.add_format({"text_wrap": True, "valign": "top", "border": 1})
 
+        def _excel_cell_text(value: object) -> str:
+            if value is None:
+                return ""
+            try:
+                if pd.isna(value):
+                    return ""
+            except (TypeError, ValueError):
+                pass
+            return str(value)
+
         for sheet_name, df in export_bundle.items():
             safe_sheet = sheet_name[:31]
             startrow = 4
@@ -905,8 +915,15 @@ def xlsx_download(export_bundle: Dict[str, pd.DataFrame]) -> bytes:
 
             for col_idx, col_name in enumerate(df.columns):
                 worksheet.write(startrow, col_idx, col_name, header_fmt)
-                series = df[col_name].astype(str) if not df.empty else pd.Series([col_name])
-                max_len = max([len(str(col_name))] + [len(x) for x in series.head(100)])
+                # Hitung lebar kolom secara aman.
+                # Beberapa nilai DataFrame dapat berupa float/int/NaN; len() langsung pada
+                # angka akan memicu TypeError di Streamlit Cloud. Karena itu semua nilai
+                # diubah ke string terlebih dahulu.
+                if df.empty:
+                    preview_values = [col_name]
+                else:
+                    preview_values = df[col_name].head(100).tolist()
+                max_len = max([len(str(col_name))] + [len(_excel_cell_text(x)) for x in preview_values])
                 width = min(max(max_len + 2, 12), 42)
                 worksheet.set_column(col_idx, col_idx, width, text_fmt)
 
@@ -926,7 +943,13 @@ def xlsx_download(export_bundle: Dict[str, pd.DataFrame]) -> bytes:
 
 
 def _pdf_clean(value: object) -> str:
-    text = "" if pd.isna(value) else str(value)
+    if value is None:
+        text = ""
+    else:
+        try:
+            text = "" if pd.isna(value) else str(value)
+        except (TypeError, ValueError):
+            text = str(value)
     replacements = {
         "🟢": "",
         "🔴": "",
