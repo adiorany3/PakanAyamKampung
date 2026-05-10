@@ -1051,4 +1051,5 @@ with data_tab:
 st.divider()
 st.caption(
     "Versi disempurnakan: optimasi biaya, insight harga bahan, evaluasi lisin-metionin, estimasi kebutuhan pakan, panduan pemeliharaan, dan checklist belanja."
+    "Developed by : Galuh Adi Insani"
 )
