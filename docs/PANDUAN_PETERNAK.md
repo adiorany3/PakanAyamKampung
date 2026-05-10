@@ -1,5 +1,7 @@
 # Panduan Praktis Peternak Ayam Kampung/KUB
 
+**Developed by: Galuh Adi Insani**
+
 Dokumen ini menjadi pendamping aplikasi `Optimizer Pakan Ayam Kampung Indonesia`.
 
 ## 1. Tujuan formulasi pakan
@@ -106,3 +108,40 @@ Biaya pakan per kg bobot hidup = biaya pakan total / total kenaikan bobot hidup
 ```
 
 Rumus ini sering lebih berguna daripada hanya melihat harga pakan per kg.
+
+
+## 10. Ekspor ransum ke Excel dan PDF
+
+Aplikasi menyediakan tiga jenis unduhan:
+
+### Excel `.xlsx`
+
+Gunakan Excel untuk arsip usaha dan perhitungan lanjutan. File Excel berisi beberapa sheet:
+
+- **Ringkasan**: fase ayam, mode formulasi, jumlah pakan, biaya total, biaya/kg, estimasi kebutuhan, dan hasil nutrisi utama.
+- **Formula Ransum**: persentase bahan, jumlah kg, harga/kg, biaya, serta kontribusi protein dan energi.
+- **Evaluasi Nutrisi**: status nutrisi terhadap target fase.
+- **Checklist Belanja**: daftar bahan yang perlu dibeli beserta jumlah dan biaya.
+- **Insight Bahan**: efisiensi harga bahan berdasarkan protein dan energi.
+- **Saran**: rekomendasi perbaikan formula.
+- **Data Bahan**: data harga, nutrisi, dan batas pemakaian yang digunakan dalam perhitungan.
+- **Pemeliharaan**: checklist harian dan mingguan.
+
+### PDF
+
+Gunakan PDF untuk laporan siap cetak atau dibagikan ke peternak, kelompok ternak, penyuluh, atau mitra usaha. PDF berisi ringkasan ransum, formula, evaluasi nutrisi, saran tindakan, checklist belanja, dan checklist pemeliharaan.
+
+### CSV
+
+CSV tetap disediakan untuk kebutuhan sederhana, misalnya membuka formula di spreadsheet ringan atau sistem pencatatan lain.
+
+## 11. Cara menyesuaikan biaya dengan kondisi Indonesia
+
+Harga bahan pakan sangat berbeda antar daerah. Untuk mendapatkan hasil paling efisien:
+
+- Masukkan harga bahan sesuai kondisi lokal, bukan harga perkiraan umum.
+- Jika jagung mahal tetapi dedak murah, naikkan batas dedak secara hati-hati dan tetap perhatikan serat.
+- Jika tepung ikan lokal murah di daerah pesisir, tetap batasi penggunaannya dan cek bau, garam, kadar air, dan kemungkinan pemalsuan.
+- Jika bungkil kedelai mahal, kombinasikan dengan bahan protein lokal, tetapi jangan sampai protein, lisin, dan metionin terlalu rendah.
+- Jika bahan mudah berjamur karena daerah lembap, jangan membeli stok terlalu banyak; bahan murah yang rusak dapat membuat kerugian lebih besar.
+- Evaluasi efisiensi dari biaya per kg bobot hidup, bukan hanya harga pakan per kg.

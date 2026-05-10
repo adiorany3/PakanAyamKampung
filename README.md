@@ -1,8 +1,8 @@
 # Optimizer Pakan Ayam Kampung Indonesia
 
-Aplikasi Streamlit untuk membantu peternak ayam kampung/KUB menyusun ransum berbasis bahan lokal, target nutrisi, dan harga pasar setempat.
+**Developed by: Galuh Adi Insani**
 
-Versi ini menyempurnakan repo awal `PakanAyamKampung` agar lebih siap digunakan oleh peternak di Indonesia, bukan hanya menghitung komposisi dasar.
+Aplikasi Streamlit untuk membantu peternak ayam kampung/KUB menyusun ransum berbasis bahan lokal, target nutrisi, dan harga pasar setempat. Versi ini menyempurnakan repo awal `PakanAyamKampung` agar lebih siap digunakan oleh peternak di Indonesia.
 
 ## Fitur utama
 
@@ -36,9 +36,10 @@ Versi ini menyempurnakan repo awal `PakanAyamKampung` agar lebih siap digunakan 
    - Starter/DOC, grower, semi-intensif, kesehatan, biosekuriti, dan penyimpanan bahan.
    - Ada checklist harian dan mingguan.
 
-8. **Unduhan CSV**
-   - Formula pakan.
-   - Checklist belanja bahan.
+8. **Unduhan ransum lengkap**
+   - Excel `.xlsx` berisi sheet: Ringkasan, Formula Ransum, Evaluasi Nutrisi, Checklist Belanja, Target Nutrisi, Insight Bahan, Saran, Data Bahan, dan Pemeliharaan.
+   - PDF berisi laporan ringkas siap cetak: ringkasan biaya/nutrisi, formula, evaluasi, saran, checklist belanja, dan checklist pemeliharaan.
+   - CSV tetap tersedia untuk formula dan checklist belanja sederhana.
 
 ## Cara menjalankan
 
@@ -64,19 +65,19 @@ http://localhost:8501
    - `Optimasi biaya otomatis`: aplikasi mencari formula efisien.
    - `Pakai formula contoh`: memakai titik awal praktis.
    - `Atur manual`: peternak mengatur persentase sendiri.
-5. Lihat status nutrisi.
-6. Baca saran perbaikan formula.
-7. Unduh CSV untuk dicetak atau disimpan.
+5. Lihat status nutrisi dan saran perbaikan.
+6. Gunakan tombol **Unduh ransum Excel (.xlsx)** untuk arsip kerja dan perhitungan lanjutan.
+7. Gunakan tombol **Unduh ransum PDF** untuk dicetak atau dibagikan ke peternak/penyuluh.
 
 ## Strategi mendapatkan nutrisi terbaik dengan biaya efisien
 
 - Jangan memilih bahan hanya dari harga per kg. Lihat juga protein, energi, serat, dan mineral.
-- Jagung biasanya menjadi sumber energi utama, tetapi perlu sumber protein.
+- Jagung biasanya menjadi sumber energi utama, tetapi tetap perlu sumber protein.
 - Dedak murah, tetapi serat dan minyaknya tinggi. Batasi bila pertumbuhan melambat atau dedak mudah tengik.
-- Bungkil kedelai mahal, tetapi efektif menaikkan protein dan lisin.
+- Bungkil kedelai relatif mahal, tetapi efektif menaikkan protein dan lisin.
 - Tepung ikan bagus untuk protein dan mineral, tetapi harus dicek mutu, bau, kadar garam, dan harganya.
 - Kapur pakan penting untuk kalsium, khususnya induk/petelur, tetapi tidak boleh berlebihan.
-- Formula yang murah secara angka harus diuji dulu di sebagian kecil ayam selama 7-14 hari.
+- Formula murah harus diuji dulu pada sebagian kecil ayam selama 7-14 hari sebelum diterapkan ke seluruh kandang.
 
 ## Catatan penting
 

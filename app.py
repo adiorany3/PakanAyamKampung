@@ -18,11 +18,22 @@ Catatan:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+import io
+import re
 from typing import Dict, Iterable, List, Optional, Tuple
+from xml.sax.saxutils import escape
 
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 try:
     from scipy.optimize import linprog
@@ -39,6 +50,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+DEVELOPER = "Galuh Adi Insani"
+APP_VERSION = "PakanAyamKampung Pro Export"
 
 
 # =============================================================================
@@ -706,6 +721,341 @@ def csv_download(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8-sig")
 
 
+def slugify_filename(text: str) -> str:
+    """Buat nama file aman untuk Windows/Linux dari nama fase."""
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", text.lower()).strip("_")
+    return slug or "ransum_pakan"
+
+
+def target_to_dataframe(target: Dict[str, float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"Parameter": "Protein kasar", "Batas": f"{target['protein_min']} - {target['protein_max']} %"},
+            {"Parameter": "Energi metabolis", "Batas": f"{target['energi_min']} - {target['energi_max']} kkal/kg"},
+            {"Parameter": "Kalsium", "Batas": f"{target['kalsium_min']} - {target['kalsium_max']} %"},
+            {"Parameter": "Fosfor", "Batas": f"{target['fosfor_min']} - {target['fosfor_max']} %"},
+            {"Parameter": "Lisin", "Batas": f"min. {target['lisin_min']} %"},
+            {"Parameter": "Metionin", "Batas": f"min. {target['metionin_min']} %"},
+            {"Parameter": "Serat kasar", "Batas": f"maks. {target['serat_max']} %"},
+        ]
+    )
+
+
+def checklist_pemeliharaan_dataframe() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Waktu": "Pagi",
+                "Pekerjaan": "Cek ayam lemah/sakit, air minum, sisa pakan, suhu kandang, dan litter basah.",
+            },
+            {"Waktu": "Siang", "Pekerjaan": "Tambah air, cek ventilasi/panas, buang pakan basah atau tercemar."},
+            {"Waktu": "Sore", "Pekerjaan": "Pemberian pakan, cek kepadatan, amankan kandang dari predator."},
+            {
+                "Waktu": "Mingguan",
+                "Pekerjaan": "Timbang sampel ayam, hitung FCR sederhana, bersihkan peralatan, dan evaluasi biaya.",
+            },
+        ]
+    )
+
+
+def build_export_formula_table(
+    df_bahan: pd.DataFrame,
+    komposisi: Dict[str, float],
+    jumlah_kg: float,
+) -> pd.DataFrame:
+    """Tabel numerik untuk Excel/PDF agar mudah diproses ulang."""
+    lookup = sanitize_bahan_df(df_bahan).set_index("Bahan").to_dict("index")
+    rows = []
+    for nama, pct in komposisi.items():
+        if nama not in lookup or pct <= 0.0001:
+            continue
+        row = lookup[nama]
+        kg = jumlah_kg * pct / 100.0
+        harga = float(row["Harga Rp/kg"])
+        biaya = kg * harga
+        rows.append(
+            {
+                "Bahan": nama,
+                "Persen (%)": round(pct, 3),
+                "Jumlah (kg)": round(kg, 3),
+                "Harga Rp/kg": round(harga, 0),
+                "Biaya Rp": round(biaya, 0),
+                "Protein kontribusi (%)": round(pct / 100.0 * float(row["Protein (%)"]), 3),
+                "EM kontribusi (kkal/kg)": round(pct / 100.0 * float(row["EM (kkal/kg)"]), 0),
+                "Ca kontribusi (%)": round(pct / 100.0 * float(row["Ca (%)"]), 3),
+                "P kontribusi (%)": round(pct / 100.0 * float(row["P (%)"]), 3),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def build_export_bundle(
+    *,
+    fase: str,
+    mode: str,
+    jumlah_pakan: float,
+    jumlah_ayam: int,
+    hari_pakai: int,
+    konsumsi_g: int,
+    estimasi_kebutuhan: float,
+    target: Dict[str, float],
+    df_bahan: pd.DataFrame,
+    komposisi: Dict[str, float],
+    ringkasan: Dict[str, float],
+    evaluasi: pd.DataFrame,
+    saran: List[str],
+    feed_share: Optional[int] = None,
+) -> Dict[str, pd.DataFrame]:
+    formula_export = build_export_formula_table(df_bahan, komposisi, jumlah_pakan)
+    shopping = formula_export[["Bahan", "Jumlah (kg)", "Biaya Rp"]].copy() if not formula_export.empty else pd.DataFrame()
+    if not shopping.empty:
+        shopping.insert(0, "Checklist beli", "")
+
+    biaya_estimasi_periode = ringkasan["biaya_per_kg"] * estimasi_kebutuhan if estimasi_kebutuhan > 0 else 0.0
+    ringkasan_df = pd.DataFrame(
+        [
+            {"Informasi": "Aplikasi", "Nilai": APP_VERSION},
+            {"Informasi": "Developed by", "Nilai": DEVELOPER},
+            {"Informasi": "Tanggal cetak", "Nilai": datetime.now().strftime("%d-%m-%Y %H:%M")},
+            {"Informasi": "Fase ayam", "Nilai": fase},
+            {"Informasi": "Mode formulasi", "Nilai": mode},
+            {"Informasi": "Jumlah pakan dibuat (kg)", "Nilai": round(jumlah_pakan, 3)},
+            {"Informasi": "Jumlah ayam (ekor)", "Nilai": jumlah_ayam},
+            {"Informasi": "Periode pakai pakan (hari)", "Nilai": hari_pakai},
+            {"Informasi": "Konsumsi rata-rata (g/ekor/hari)", "Nilai": konsumsi_g},
+            {"Informasi": "Estimasi kebutuhan periode (kg)", "Nilai": round(estimasi_kebutuhan, 3)},
+            {"Informasi": "Biaya total ransum (Rp)", "Nilai": round(ringkasan["biaya_total"], 0)},
+            {"Informasi": "Biaya per kg pakan (Rp)", "Nilai": round(ringkasan["biaya_per_kg"], 0)},
+            {"Informasi": "Estimasi biaya pakan periode (Rp)", "Nilai": round(biaya_estimasi_periode, 0)},
+            {"Informasi": "Protein (%)", "Nilai": round(ringkasan["protein"], 3)},
+            {"Informasi": "Energi metabolis (kkal/kg)", "Nilai": round(ringkasan["energi"], 0)},
+            {"Informasi": "Lemak (%)", "Nilai": round(ringkasan["lemak"], 3)},
+            {"Informasi": "Serat (%)", "Nilai": round(ringkasan["serat"], 3)},
+            {"Informasi": "Kalsium/Ca (%)", "Nilai": round(ringkasan["kalsium"], 3)},
+            {"Informasi": "Fosfor/P (%)", "Nilai": round(ringkasan["fosfor"], 3)},
+            {"Informasi": "Lisin (%)", "Nilai": round(ringkasan["lisin"], 3)},
+            {"Informasi": "Metionin (%)", "Nilai": round(ringkasan["metionin"], 3)},
+            {"Informasi": "Porsi biaya pakan simulasi (%)", "Nilai": "-" if feed_share is None else feed_share},
+        ]
+    )
+
+    bahan_export = sanitize_bahan_df(df_bahan)[
+        [
+            "Pakai",
+            "Bahan",
+            "Kategori",
+            "Harga Rp/kg",
+            "Min %",
+            "Max %",
+            "Protein (%)",
+            "EM (kkal/kg)",
+            "Lemak (%)",
+            "Serat (%)",
+            "Ca (%)",
+            "P (%)",
+            "Lisin (%)",
+            "Metionin (%)",
+            "Catatan",
+        ]
+    ].copy()
+
+    insight = biaya_efektif_bahan(df_bahan)
+    saran_df = pd.DataFrame({"No": list(range(1, len(saran) + 1)), "Saran tindakan": saran})
+
+    return {
+        "Ringkasan": ringkasan_df,
+        "Formula Ransum": formula_export,
+        "Evaluasi Nutrisi": evaluasi,
+        "Checklist Belanja": shopping,
+        "Target Nutrisi": target_to_dataframe(target),
+        "Insight Bahan": insight,
+        "Saran": saran_df,
+        "Data Bahan": bahan_export,
+        "Pemeliharaan": checklist_pemeliharaan_dataframe(),
+    }
+
+
+def xlsx_download(export_bundle: Dict[str, pd.DataFrame]) -> bytes:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        workbook = writer.book
+        title_fmt = workbook.add_format(
+            {"bold": True, "font_size": 16, "align": "center", "valign": "vcenter", "font_color": "#1F4E79"}
+        )
+        subtitle_fmt = workbook.add_format({"italic": True, "font_size": 10, "align": "center", "font_color": "#666666"})
+        header_fmt = workbook.add_format(
+            {"bold": True, "bg_color": "#D9EAF7", "border": 1, "align": "center", "valign": "vcenter"}
+        )
+        money_fmt = workbook.add_format({"num_format": '"Rp"#,##0', "border": 1})
+        number_fmt = workbook.add_format({"num_format": "#,##0.00", "border": 1})
+        integer_fmt = workbook.add_format({"num_format": "#,##0", "border": 1})
+        text_fmt = workbook.add_format({"text_wrap": True, "valign": "top", "border": 1})
+
+        for sheet_name, df in export_bundle.items():
+            safe_sheet = sheet_name[:31]
+            startrow = 4
+            df.to_excel(writer, sheet_name=safe_sheet, index=False, startrow=startrow)
+            worksheet = writer.sheets[safe_sheet]
+            last_col = max(len(df.columns) - 1, 1)
+            worksheet.merge_range(0, 0, 0, last_col, "Laporan Ransum Pakan Ayam Kampung", title_fmt)
+            worksheet.merge_range(1, 0, 1, last_col, f"Developed by: {DEVELOPER}", subtitle_fmt)
+            worksheet.merge_range(2, 0, 2, last_col, f"Dibuat: {datetime.now().strftime('%d-%m-%Y %H:%M')}", subtitle_fmt)
+            worksheet.freeze_panes(startrow + 1, 0)
+            worksheet.autofilter(startrow, 0, startrow + len(df), last_col)
+
+            for col_idx, col_name in enumerate(df.columns):
+                worksheet.write(startrow, col_idx, col_name, header_fmt)
+                series = df[col_name].astype(str) if not df.empty else pd.Series([col_name])
+                max_len = max([len(str(col_name))] + [len(x) for x in series.head(100)])
+                width = min(max(max_len + 2, 12), 42)
+                worksheet.set_column(col_idx, col_idx, width, text_fmt)
+
+                lower = str(col_name).lower()
+                if "rp" in lower or "biaya" in lower or "harga" in lower:
+                    worksheet.set_column(col_idx, col_idx, max(width, 14), money_fmt)
+                elif "%" in lower or "kg" in lower or "kkal" in lower or "nilai" in lower or "jumlah" in lower:
+                    worksheet.set_column(col_idx, col_idx, max(width, 12), number_fmt)
+                elif lower in {"no", "jumlah ayam (ekor)", "periode pakai pakan (hari)"}:
+                    worksheet.set_column(col_idx, col_idx, max(width, 10), integer_fmt)
+
+            worksheet.set_landscape()
+            worksheet.fit_to_pages(1, 0)
+
+    output.seek(0)
+    return output.getvalue()
+
+
+def _pdf_clean(value: object) -> str:
+    text = "" if pd.isna(value) else str(value)
+    replacements = {
+        "🟢": "",
+        "🔴": "",
+        "🟠": "",
+        "☐": "[ ]",
+        "–": "-",
+        "—": "-",
+        "≤": "<=",
+        "≥": ">=",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    text = " ".join(text.split())
+    return escape(text)
+
+
+def _df_to_pdf_table(
+    df: pd.DataFrame,
+    styles,
+    max_rows: Optional[int] = None,
+    col_widths: Optional[List[float]] = None,
+) -> Table:
+    shown = df.head(max_rows).copy() if max_rows else df.copy()
+    header = [Paragraph(f"<b>{_pdf_clean(col)}</b>", styles["Small"]) for col in shown.columns]
+    body = []
+    for _, row in shown.iterrows():
+        body.append([Paragraph(_pdf_clean(row[col]), styles["Small"]) for col in shown.columns])
+    data = [header] + body
+    table = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9EAF7")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FBFD")]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    return table
+
+
+def pdf_download(export_bundle: Dict[str, pd.DataFrame], fase: str) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=1.2 * cm,
+        leftMargin=1.2 * cm,
+        topMargin=1.2 * cm,
+        bottomMargin=1.2 * cm,
+    )
+    base = getSampleStyleSheet()
+    styles = {
+        "Title": ParagraphStyle(
+            "TitleCustom",
+            parent=base["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=18,
+            leading=22,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#1F4E79"),
+        ),
+        "Heading": ParagraphStyle(
+            "HeadingCustom",
+            parent=base["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=12,
+            leading=15,
+            spaceBefore=8,
+            spaceAfter=5,
+            textColor=colors.HexColor("#1F4E79"),
+        ),
+        "Normal": ParagraphStyle("NormalCustom", parent=base["Normal"], fontName="Helvetica", fontSize=9, leading=12),
+        "Small": ParagraphStyle("SmallCustom", parent=base["Normal"], fontName="Helvetica", fontSize=7, leading=9),
+    }
+
+    def footer(canvas, doc_obj):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.drawString(doc_obj.leftMargin, 0.65 * cm, f"Developed by: {DEVELOPER}")
+        canvas.drawRightString(doc_obj.pagesize[0] - doc_obj.rightMargin, 0.65 * cm, f"Halaman {doc_obj.page}")
+        canvas.restoreState()
+
+    story = [
+        Paragraph("Laporan Ransum Pakan Ayam Kampung", styles["Title"]),
+        Paragraph(f"Fase: {_pdf_clean(fase)} | Developed by: {DEVELOPER}", styles["Normal"]),
+        Spacer(1, 8),
+        Paragraph("Ringkasan", styles["Heading"]),
+        _df_to_pdf_table(export_bundle["Ringkasan"].head(22), styles, col_widths=[6.5 * cm, 12 * cm]),
+        Spacer(1, 8),
+        Paragraph("Formula Ransum", styles["Heading"]),
+        _df_to_pdf_table(
+            export_bundle["Formula Ransum"][
+                ["Bahan", "Persen (%)", "Jumlah (kg)", "Harga Rp/kg", "Biaya Rp", "Protein kontribusi (%)", "EM kontribusi (kkal/kg)"]
+            ],
+            styles,
+            col_widths=[5.2 * cm, 2.2 * cm, 2.2 * cm, 2.8 * cm, 2.8 * cm, 3.2 * cm, 3.2 * cm],
+        ),
+        Spacer(1, 8),
+        Paragraph("Evaluasi Nutrisi", styles["Heading"]),
+        _df_to_pdf_table(export_bundle["Evaluasi Nutrisi"], styles, col_widths=[5.5 * cm, 3.5 * cm, 5.5 * cm, 3.5 * cm]),
+        PageBreak(),
+        Paragraph("Saran Tindakan", styles["Heading"]),
+        _df_to_pdf_table(export_bundle["Saran"], styles, col_widths=[1.2 * cm, 23 * cm]),
+        Spacer(1, 8),
+        Paragraph("Checklist Belanja", styles["Heading"]),
+        _df_to_pdf_table(export_bundle["Checklist Belanja"], styles, col_widths=[2.5 * cm, 6 * cm, 3 * cm, 3.5 * cm]),
+        Spacer(1, 8),
+        Paragraph("Checklist Pemeliharaan", styles["Heading"]),
+        _df_to_pdf_table(export_bundle["Pemeliharaan"], styles, col_widths=[3 * cm, 18 * cm]),
+        Spacer(1, 8),
+        Paragraph("Catatan", styles["Heading"]),
+        Paragraph(
+            "Nilai nutrisi bahan adalah pendekatan praktis. Untuk skala komersial, sesuaikan dengan uji laboratorium bahan, kondisi kandang, dan arahan penyuluh atau nutrisionis ternak setempat.",
+            styles["Normal"],
+        ),
+    ]
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def build_shopping_list(tabel_komposisi: pd.DataFrame) -> pd.DataFrame:
     if tabel_komposisi.empty:
         return pd.DataFrame()
@@ -751,6 +1101,7 @@ st.title("🐔 Optimizer Pakan Ayam Kampung Indonesia")
 st.caption(
     "Hitung formula ransum, cari biaya paling efisien, cek target nutrisi, dan baca panduan pemeliharaan praktis untuk kondisi peternak Indonesia."
 )
+st.caption(f"Developed by: {DEVELOPER}")
 
 with st.expander("Cara pakai cepat", expanded=True):
     st.markdown(
@@ -876,6 +1227,24 @@ if estimasi_kebutuhan > 0:
         .replace(",", ".")
     )
 
+saran_list = list(buat_saran(ringkasan, target, edited_df))
+export_bundle = build_export_bundle(
+    fase=fase,
+    mode=mode,
+    jumlah_pakan=jumlah_pakan,
+    jumlah_ayam=int(jumlah_ayam),
+    hari_pakai=int(hari_pakai),
+    konsumsi_g=int(konsumsi_g),
+    estimasi_kebutuhan=estimasi_kebutuhan,
+    target=target,
+    df_bahan=edited_df,
+    komposisi=komposisi,
+    ringkasan=ringkasan,
+    evaluasi=evaluasi,
+    saran=saran_list,
+)
+file_slug = slugify_filename(fase)
+
 main_tab, insight_tab, pemeliharaan_tab, data_tab = st.tabs(
     ["📌 Formula & nutrisi", "💰 Insight biaya", "🏡 Pemeliharaan", "📚 Data & referensi"]
 )
@@ -885,12 +1254,28 @@ with main_tab:
     with left:
         st.markdown("#### Komposisi dan kebutuhan bahan")
         st.dataframe(tabel_komposisi, use_container_width=True, hide_index=True)
-        st.download_button(
-            "Unduh formula CSV",
-            data=csv_download(tabel_komposisi),
-            file_name=f"formula_pakan_{fase.lower().replace(' ', '_').replace('/', '-')}.csv",
-            mime="text/csv",
-        )
+        download_cols = st.columns(3)
+        with download_cols[0]:
+            st.download_button(
+                "Unduh ransum Excel (.xlsx)",
+                data=xlsx_download(export_bundle),
+                file_name=f"laporan_ransum_{file_slug}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        with download_cols[1]:
+            st.download_button(
+                "Unduh ransum PDF",
+                data=pdf_download(export_bundle, fase),
+                file_name=f"laporan_ransum_{file_slug}.pdf",
+                mime="application/pdf",
+            )
+        with download_cols[2]:
+            st.download_button(
+                "Unduh formula CSV",
+                data=csv_download(tabel_komposisi),
+                file_name=f"formula_pakan_{file_slug}.csv",
+                mime="text/csv",
+            )
 
         shopping = build_shopping_list(tabel_komposisi)
         with st.expander("Checklist belanja bahan"):
@@ -906,7 +1291,7 @@ with main_tab:
         st.markdown("#### Evaluasi nutrisi")
         st.dataframe(evaluasi, use_container_width=True, hide_index=True)
         st.markdown("#### Saran tindakan")
-        for item in buat_saran(ringkasan, target, edited_df):
+        for item in saran_list:
             st.write(f"- {item}")
 
 with insight_tab:
@@ -995,14 +1380,7 @@ with pemeliharaan_tab:
     )
 
     st.markdown("#### Checklist harian kandang")
-    checklist = pd.DataFrame(
-        [
-            {"Waktu": "Pagi", "Pekerjaan": "Cek ayam lemah/sakit, air minum, sisa pakan, suhu kandang, dan litter basah."},
-            {"Waktu": "Siang", "Pekerjaan": "Tambah air, cek ventilasi/panas, buang pakan basah atau tercemar."},
-            {"Waktu": "Sore", "Pekerjaan": "Pemberian pakan, cek kepadatan, amankan kandang dari predator."},
-            {"Waktu": "Mingguan", "Pekerjaan": "Timbang sampel ayam, hitung FCR sederhana, bersihkan peralatan, dan evaluasi biaya."},
-        ]
-    )
+    checklist = checklist_pemeliharaan_dataframe()
     st.dataframe(checklist, use_container_width=True, hide_index=True)
 
 with data_tab:
@@ -1050,6 +1428,5 @@ with data_tab:
 
 st.divider()
 st.caption(
-    "Versi disempurnakan: optimasi biaya, insight harga bahan, evaluasi lisin-metionin, estimasi kebutuhan pakan, panduan pemeliharaan, dan checklist belanja. "
-    "Developed by : Galuh Adi Insani"
+    f"Versi disempurnakan: optimasi biaya, insight harga bahan, unduhan Excel/PDF, evaluasi lisin-metionin, estimasi kebutuhan pakan, panduan pemeliharaan, dan checklist belanja. Developed by: {DEVELOPER}."
 )
