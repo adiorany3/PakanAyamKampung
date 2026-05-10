@@ -1124,7 +1124,6 @@ st.title("🐔 Optimizer Pakan Ayam Kampung Indonesia")
 st.caption(
     "Hitung formula ransum, cari biaya paling efisien, cek target nutrisi, dan baca panduan pemeliharaan praktis untuk kondisi peternak Indonesia."
 )
-st.caption(f"Developed by: {DEVELOPER}")
 
 with st.expander("Cara pakai cepat", expanded=True):
     st.markdown(
